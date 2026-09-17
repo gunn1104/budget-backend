@@ -32,11 +32,11 @@ app.post("/api/parse-slip", async (req, res) => {
       }
     };
 
-    // ปรับรายชื่อโมเดลมาตรฐานที่พร้อมใช้งานเสมอ
+    // ใช้โมเดลมาตรฐานของ Gemini API
     const candidateModels = [
-      "gemini-1.5-flash-8b",
-      "gemini-1.5-pro",
-      "gemini-3.6-flash"
+      "gemini-1.5-flash",
+      "gemini-pro-vision",
+      "gemini-2.0-flash"
     ];
 
     let result = null;
@@ -50,6 +50,8 @@ app.post("/api/parse-slip", async (req, res) => {
       } catch (err) {
         console.warn(`Model ${modelName} failed, trying next... Error:`, err.message);
         lastError = err;
+        // หากเจอ 503 ให้รอ 1.5 วินาทีก่อนลองโมเดลถัดไป
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     }
 
