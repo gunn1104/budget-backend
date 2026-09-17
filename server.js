@@ -32,8 +32,13 @@ app.post("/api/parse-slip", async (req, res) => {
       }
     };
 
-    // ลิสต์โมเดลเรียงตามลำดับ ถ้าตัวแรกหนาแน่นจะสลับไปตัวถัดไปอัตโนมัติ
-    const candidateModels = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
+    // ปรับรายชื่อโมเดลมาตรฐานที่พร้อมใช้งานเสมอ
+    const candidateModels = [
+      "gemini-1.5-flash-8b",
+      "gemini-1.5-pro",
+      "gemini-3.6-flash"
+    ];
+
     let result = null;
     let lastError = null;
 
@@ -41,7 +46,7 @@ app.post("/api/parse-slip", async (req, res) => {
       try {
         const model = genAI.getGenerativeModel({ model: modelName });
         result = await model.generateContent([prompt, imagePart]);
-        if (result) break; // ถ้าสำเร็จให้หยุดลูป
+        if (result) break;
       } catch (err) {
         console.warn(`Model ${modelName} failed, trying next... Error:`, err.message);
         lastError = err;
