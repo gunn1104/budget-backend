@@ -22,16 +22,10 @@ app.post("/api/parse-slip", async (req, res) => {
       return res.status(400).json({ error: "No image data provided" });
     }
 
-    // กำหนดให้โมเดลตอบกลับเป็น JSON Format โดยตรง
     const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
 
-
-    const prompt = `นี่คือภาพสลิปโอนเงิน กรุณาอ่านข้อมูลและตอบกลับเป็น JSON เท่านั้น โครงสร้างดังนี้:
-{
-  "amount": ตัวเลขจำนวนเงิน (เช่น 150.00),
-  "date": "YYYY-MM-DD",
-  "note": "รายละเอียดรายการ เช่น โอนเงินให้..."
-}`;
+    const prompt = `นี่คือภาพสลิปโอนเงิน อ่านข้อมูลแล้วตอบกลับเฉพาะโครงสร้าง JSON นี้เท่านั้น ห้ามใส่ markdown code block:
+{"amount": 100, "date": "YYYY-MM-DD", "note": "ข้อความ"}`;
 
     const imagePart = {
       inlineData: {
@@ -41,13 +35,19 @@ app.post("/api/parse-slip", async (req, res) => {
     };
 
     const result = await model.generateContent([prompt, imagePart]);
-    const responseText = result.response.text();
-    const data = JSON.parse(responseText);
-
+    let text = result.response.text().trim();
+    
+    // ดึงเฉพาะก้อน {...} ออกมา เพื่อป้องกันการพังจาก markdown block
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      text = jsonMatch[0];
+    }
+    
+    const data = JSON.parse(text);
     res.json(data);
   } catch (error) {
     console.error("Error parsing slip:", error);
-    res.status(500).json({ error: "Failed to parse slip image", details: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
