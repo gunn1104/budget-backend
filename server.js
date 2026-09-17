@@ -8,8 +8,11 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
-// ดึง API Key ของ Gemini จาก Environment Variables บน Render
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+
+app.get("/", (req, res) => {
+  res.send("Budget Planner Backend (Gemini Powered) is running!");
+});
 
 app.post("/api/parse-slip", async (req, res) => {
   try {
@@ -19,36 +22,38 @@ app.post("/api/parse-slip", async (req, res) => {
       return res.status(400).json({ error: "No image data provided" });
     }
 
-    // เรียกใช้โมเดล Gemini 1.5 Flash (ฟรี และอ่านสลิปได้เร็ว)
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // กำหนดให้โมเดลตอบกลับเป็น JSON Format โดยตรง
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash",
+      generationConfig: { responseMimeType: "application/json" }
+    });
 
-    const prompt = 'นี่คือภาพสลิปหรือหลักฐานการโอนเงิน ตอบกลับเป็น JSON เท่านั้น รูปแบบ: {"amount": จำนวนเงินเป็นตัวเลข หรือ null, "date": "YYYY-MM-DD" หรือ null, "note": "ชื่อผู้รับ/บันทึกสั้นๆ" หรือ ""}';
+    const prompt = `นี่คือภาพสลิปโอนเงิน กรุณาอ่านข้อมูลและตอบกลับเป็น JSON เท่านั้น โครงสร้างดังนี้:
+{
+  "amount": ตัวเลขจำนวนเงิน (เช่น 150.00),
+  "date": "YYYY-MM-DD",
+  "note": "รายละเอียดรายการ เช่น โอนเงินให้..."
+}`;
 
     const imagePart = {
       inlineData: {
         data: base64Data,
-        mimeType: mediaType || "image/jpeg",
-      },
+        mimeType: mediaType || "image/jpeg"
+      }
     };
 
     const result = await model.generateContent([prompt, imagePart]);
     const responseText = result.response.text();
-    
-    const cleanJson = responseText.replace(/```json|```/g, "").trim();
-    const parsedData = JSON.parse(cleanJson);
+    const data = JSON.parse(responseText);
 
-    return res.json(parsedData);
+    res.json(data);
   } catch (error) {
-    console.error("Error parsing slip with Gemini:", error);
-    return res.status(500).json({ error: "Failed to process image" });
+    console.error("Error parsing slip:", error);
+    res.status(500).json({ error: "Failed to parse slip image", details: error.message });
   }
 });
 
-app.get("/", (req, res) => {
-  res.send("Budget Planner Backend (Gemini Powered) is running!");
-});
-
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
