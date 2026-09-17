@@ -22,8 +22,6 @@ app.post("/api/parse-slip", async (req, res) => {
       return res.status(400).json({ error: "No image data provided" });
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
-
     const prompt = `นี่คือภาพสลิปโอนเงิน อ่านข้อมูลแล้วตอบกลับเฉพาะโครงสร้าง JSON นี้เท่านั้น ห้ามใส่ markdown code block:
 {"amount": 100, "date": "YYYY-MM-DD", "note": "ข้อความ"}`;
 
@@ -34,10 +32,27 @@ app.post("/api/parse-slip", async (req, res) => {
       }
     };
 
-    const result = await model.generateContent([prompt, imagePart]);
+    // ลิสต์โมเดลเรียงตามลำดับ ถ้าตัวแรกหนาแน่นจะสลับไปตัวถัดไปอัตโนมัติ
+    const candidateModels = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
+    let result = null;
+    let lastError = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        result = await model.generateContent([prompt, imagePart]);
+        if (result) break; // ถ้าสำเร็จให้หยุดลูป
+      } catch (err) {
+        console.warn(`Model ${modelName} failed, trying next... Error:`, err.message);
+        lastError = err;
+      }
+    }
+
+    if (!result) {
+      throw lastError || new Error("All models failed to respond");
+    }
+
     let text = result.response.text().trim();
-    
-    // ดึงเฉพาะก้อน {...} ออกมา เพื่อป้องกันการพังจาก markdown block
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       text = jsonMatch[0];
