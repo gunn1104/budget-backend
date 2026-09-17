@@ -32,31 +32,23 @@ app.post("/api/parse-slip", async (req, res) => {
       }
     };
 
-    // ใช้โมเดลมาตรฐานของ Gemini API
-    const candidateModels = [
-      "gemini-1.5-flash",
-      "gemini-pro-vision",
-      "gemini-2.0-flash"
-    ];
+    // ใช้โมเดล gemini-3.6-flash
+    const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
 
     let result = null;
-    let lastError = null;
+    let maxRetries = 3;
 
-    for (const modelName of candidateModels) {
+    // ระบบวนลูปพยายามลองใหม่สูงสุด 3 ครั้ง หากเจอ 503 (High Demand)
+    for (let i = 0; i < maxRetries; i++) {
       try {
-        const model = genAI.getGenerativeModel({ model: modelName });
         result = await model.generateContent([prompt, imagePart]);
         if (result) break;
       } catch (err) {
-        console.warn(`Model ${modelName} failed, trying next... Error:`, err.message);
-        lastError = err;
-        // หากเจอ 503 ให้รอ 1.5 วินาทีก่อนลองโมเดลถัดไป
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        console.warn(`Attempt ${i + 1} failed with error: ${err.message}`);
+        if (i === maxRetries - 1) throw err;
+        // รอ 2 วินาทีก่อนลองรอบถัดไป
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
-    }
-
-    if (!result) {
-      throw lastError || new Error("All models failed to respond");
     }
 
     let text = result.response.text().trim();
