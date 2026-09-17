@@ -23,7 +23,7 @@ app.post("/api/parse-slip", async (req, res) => {
     }
 
     // กำหนดให้โมเดลตอบกลับเป็น JSON Format โดยตรง
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
 
     const prompt = `นี่คือภาพสลิปโอนเงิน กรุณาอ่านข้อมูลและตอบกลับเป็น JSON เท่านั้น โครงสร้างดังนี้:
