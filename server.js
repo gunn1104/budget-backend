@@ -1,71 +1,87 @@
-const express = require("express");
-const cors = require("cors");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-require("dotenv").config();
+const express = require('express');
+const cors = require('cors');
+const fetch = require('node-fetch'); // หรือถ้าใช้ Node เวอร์ชันใหม่ๆ จะมี fetch ในตัวแล้ว
 
 const app = express();
-
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: '10mb' })); // รองรับรูปสลิปขนาดใหญ่
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const PORT = process.env.PORT || 3000;
 
-app.get("/", (req, res) => {
-  res.send("Budget Planner Backend (Gemini Powered) is running!");
-});
-
-app.post("/api/parse-slip", async (req, res) => {
+// 1. Endpoint สำหรับอ่านสลิป (ระบบเดิมที่มีอยู่แล้ว)
+app.post('/api/parse-slip', async (req, res) => {
   try {
     const { base64Data, mediaType } = req.body;
+    const apiKey = process.env.AI_API_KEY; // ดึงคีย์จาก Environment Variable ของ Render
 
-    if (!base64Data) {
-      return res.status(400).json({ error: "No image data provided" });
-    }
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 500,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mediaType || "image/jpeg", data: base64Data } },
+              {
+                type: "text",
+                text: "นี่คือภาพสลิปหรือหลักฐานการโอนเงิน อ่านรายละเอียดแล้วตอบกลับเป็น JSON เท่านั้น ห้ามมีคำอธิบายหรือ markdown รูปแบบ: {\"amount\": ตัวเลขยอดเงิน หรือ null, \"date\": \"YYYY-MM-DD\" หรือ null, \"note\": \"ชื่อผู้รับหรือบันทึก\" หรือ \"\"}"
+              }
+            ]
+          }
+        ]
+      })
+    });
 
-    const prompt = `นี่คือภาพสลิปโอนเงิน อ่านข้อมูลแล้วตอบกลับเฉพาะโครงสร้าง JSON นี้เท่านั้น ห้ามใส่ markdown code block:
-{"amount": 100, "date": "YYYY-MM-DD", "note": "ข้อความ"}`;
+    const data = await response.json();
+    const textBlock = (data.content || []).find((b) => b.type === "text");
+    const clean = (textBlock ? textBlock.text : "{}").replace(/```json|```/g, "").trim();
+    res.json(JSON.parse(clean));
 
-    const imagePart = {
-      inlineData: {
-        data: base64Data,
-        mimeType: mediaType || "image/jpeg"
-      }
-    };
-
-    // ใช้โมเดล gemini-3.6-flash
-    const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
-
-    let result = null;
-    let maxRetries = 3;
-
-    // ระบบวนลูปพยายามลองใหม่สูงสุด 3 ครั้ง หากเจอ 503 (High Demand)
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        result = await model.generateContent([prompt, imagePart]);
-        if (result) break;
-      } catch (err) {
-        console.warn(`Attempt ${i + 1} failed with error: ${err.message}`);
-        if (i === maxRetries - 1) throw err;
-        // รอ 2 วินาทีก่อนลองรอบถัดไป
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      }
-    }
-
-    let text = result.response.text().trim();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      text = jsonMatch[0];
-    }
-    
-    const data = JSON.parse(text);
-    res.json(data);
-  } catch (error) {
-    console.error("Error parsing slip:", error);
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error("Parse Slip Error:", err);
+    res.status(500).json({ error: "Failed to parse slip" });
   }
 });
 
-const PORT = process.env.PORT || 3000;
+// 2. Endpoint ใหม่ สำหรับ AI แชทซัพพอร์ต (/api/chat-assist) ตามที่แนะนำ
+app.post('/api/chat-assist', async (req, res) => {
+  try {
+    const { userName, history } = req.body;
+    const apiKey = process.env.AI_API_KEY; // ดึงคีย์จาก Render
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 350,
+        system: `คุณคือ AI ผู้ช่วยอัจฉริยะของแอปพลิเคชันจัดการงบประมาณ คุยกับผู้ใช้ชื่อ ${userName || "ผู้ใช้"} ด้วยความสุภาพ เป็นกันเอง และคอยให้คำแนะนำเรื่องการเงิน`,
+        messages: history
+      })
+    });
+
+    const data = await response.json();
+    const replyText = data.content?.[0]?.text || "รับเรื่องไว้แล้วครับ แอดมินจะติดต่อกลับเร็วๆ นี้";
+
+    res.json({ reply: replyText });
+
+  } catch (error) {
+    console.error("Chat Assist Error:", error);
+    res.status(500).json({ reply: "ขออภัย ระบบ AI กำลังขัดข้องชั่วคราว" });
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
